@@ -26,7 +26,7 @@ auto-refresh on save.
 
 ```lua
 {
-  "rashedparvez/lazydiff.nvim",
+  "rashedInt32/lazydiff.nvim",
   cmd = { "Lazydiff", "LazydiffOff", "LazydiffRefresh" },
   config = function()
     require("lazydiff").setup()
@@ -38,7 +38,7 @@ auto-refresh on save.
 
 ```lua
 use({
-  "rashedparvez/lazydiff.nvim",
+  "rashedInt32/lazydiff.nvim",
   config = function()
     require("lazydiff").setup()
   end,
