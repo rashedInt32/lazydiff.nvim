@@ -7,7 +7,12 @@ your uncommitted changes — deleted lines with `-`, added lines with `+`,
 hunk headers in between — rendered in place via extmarks. No split, no
 tab, no separate buffer.
 
-Built for the "review my AI-generated patch before I commit" loop.
+Sometimes reading a diff inside lazygit is harder to scan than I'd like —
+I wanted to see the change *in the file itself*, with the surrounding
+code and indent intact, so it's obvious at a glance what actually moved.
+And ideally still be able to edit while the diff is on screen. A handful
+of existing Neovim plugins get close, but none quite hit that mark, so
+this one does.
 
 ![lazydiff overlay rendering an added and a deleted hunk inline](screenshots/overlay.png)
 
