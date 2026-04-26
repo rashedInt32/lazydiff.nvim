@@ -21,10 +21,14 @@ local function apply()
   local dc = source_hl("DiffChange")
   local fn = source_hl("Function")
 
+  -- LazydiffAdd / Change paint the in-buffer added line via line_hl_group;
+  -- if we set fg here it overrides treesitter syntax colours, so it's bg-only.
+  -- LazydiffDelete colours virtual deleted lines that have no syntax of their
+  -- own, so it keeps fg + bg. Sign groups (the +/- prefixes) keep fg + bg too.
   local groups = {
-    LazydiffAdd = { fg = da.fg or fallbacks.add, bg = da.bg, default = true },
+    LazydiffAdd = { bg = da.bg, default = true },
+    LazydiffChange = { bg = dc.bg, default = true },
     LazydiffDelete = { fg = dd.fg or fallbacks.delete, bg = dd.bg, default = true },
-    LazydiffChange = { fg = dc.fg or fallbacks.change, bg = dc.bg, default = true },
     LazydiffAddSign = { fg = da.fg or fallbacks.add, bg = da.bg, bold = true, default = true },
     LazydiffDeleteSign = { fg = dd.fg or fallbacks.delete, bg = dd.bg, bold = true, default = true },
     LazydiffHunkHeader = { fg = fn.fg or fallbacks.header, default = true },

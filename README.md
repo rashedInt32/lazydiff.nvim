@@ -86,14 +86,20 @@ background are pulled from `DiffAdd` / `DiffDelete` / `DiffChange` /
 `Function` at setup time and re-applied on `ColorScheme` so theme
 switches still work.
 
-| Group                | Default                                            |
-| -------------------- | -------------------------------------------------- |
-| `LazydiffAdd`        | fg + bg of `DiffAdd`                               |
-| `LazydiffDelete`     | fg + bg of `DiffDelete`                            |
-| `LazydiffChange`     | fg + bg of `DiffChange`                            |
-| `LazydiffAddSign`    | bold, fg + bg of `DiffAdd`                         |
-| `LazydiffDeleteSign` | bold, fg + bg of `DiffDelete`                      |
-| `LazydiffHunkHeader` | fg of `Function`, no background                    |
+`LazydiffAdd` / `LazydiffChange` paint the in-buffer line via
+`line_hl_group`, so they're **bg-only** — setting a fg there would
+override treesitter / syntax colours on the added line. `LazydiffDelete`
+colours virtual deleted lines (which have no syntax of their own), so
+it carries both fg and bg.
+
+| Group                | Default                                              |
+| -------------------- | ---------------------------------------------------- |
+| `LazydiffAdd`        | bg of `DiffAdd` (no fg, preserves syntax)            |
+| `LazydiffChange`     | bg of `DiffChange` (no fg, preserves syntax)         |
+| `LazydiffDelete`     | fg + bg of `DiffDelete`                              |
+| `LazydiffAddSign`    | bold, fg + bg of `DiffAdd`                           |
+| `LazydiffDeleteSign` | bold, fg + bg of `DiffDelete`                        |
+| `LazydiffHunkHeader` | fg of `Function`, no background                      |
 
 If you want fg-only (Claude-style) instead of the lazygit/`git diff`
 look, override the bg to `NONE` after `setup()`:
