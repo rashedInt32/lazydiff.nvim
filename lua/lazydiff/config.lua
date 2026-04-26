@@ -3,8 +3,8 @@ local M = {}
 M.defaults = {
   ref = "HEAD",
   signs = {
-    add = "+ ",
-    delete = "- ",
+    add = "+",        -- rendered in the sign column (max 2 cells)
+    delete = "- ",    -- prefix on virt_lines for deleted content
     context = "  ",
   },
   show_hunk_header = true,
