@@ -10,9 +10,17 @@ tab, no separate buffer.
 Sometimes reading a diff inside lazygit is harder to scan than I'd like —
 I wanted to see the change *in the file itself*, with the surrounding
 code and indent intact, so it's obvious at a glance what actually moved.
-And ideally still be able to edit while the diff is on screen. A handful
-of existing Neovim plugins get close, but none quite hit that mark, so
-this one does.
+And ideally still be able to edit while the diff is on screen.
+
+This matters more now that AI writes so much of the code I'm reading.
+When Claude hands me a 100-line patch, I want to actually look at it
+before I commit — not skim a separate diff panel and hope. Seeing the
+change inline, with the surrounding code and my own syntax highlighting
+intact, makes it obvious at a glance what's moved and lets me fix the
+bits I don't like without leaving the buffer.
+
+A handful of existing Neovim plugins get close, but none quite hit
+that mark, so this one does.
 
 ![lazydiff overlay rendering an added and a deleted hunk inline](screenshots/overlay.png)
 
