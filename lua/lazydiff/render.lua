@@ -50,11 +50,17 @@ local function set_below(bufnr, anchor_0based, virt_lines)
 end
 
 local function mark_added_line(bufnr, line_0based, sign_text)
-  -- Split into two extmarks: a high-priority inline virt_text for the +
-  -- prefix, and a separate one for the line bg band. Keeping them on
-  -- distinct extmarks avoids any rendering interaction between
-  -- virt_text_pos="inline" and line_hl_group on the same mark, and makes
-  -- the prefix priority obvious at a glance.
+  -- Two extmarks:
+  --   1) inline virt_text with the + prefix (sits BEFORE buffer col 0)
+  --   2) hl_group across the buffer text + hl_eol = true to extend to the
+  --      right edge of the window
+  --
+  -- We use hl_group with end-of-line extension instead of line_hl_group on
+  -- purpose. line_hl_group also paints the bg behind the inline virt_text
+  -- region, which makes the + sign's fg sit on the same green tint as the
+  -- band — invisible in colorschemes where DiffAdd's fg/bg luminance are
+  -- close. Restricting the highlight to (col 0 → eol) leaves the prefix
+  -- area on the buffer's normal bg so the marker stays vivid.
   pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line_0based, 0, {
     virt_text = { { sign_text, "LazydiffAddSign" } },
     virt_text_pos = "inline",
@@ -62,7 +68,10 @@ local function mark_added_line(bufnr, line_0based, sign_text)
     priority = 200,
   })
   pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line_0based, 0, {
-    line_hl_group = "LazydiffAdd",
+    end_row = line_0based + 1,
+    end_col = 0,
+    hl_group = "LazydiffAdd",
+    hl_eol = true,
     priority = 100,
   })
 end
