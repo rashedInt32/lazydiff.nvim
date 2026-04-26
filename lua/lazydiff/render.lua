@@ -65,7 +65,7 @@ local function mark_added_line(bufnr, line_0based, sign_text)
     virt_text = { { sign_text, "LazydiffAddSign" } },
     virt_text_pos = "inline",
     right_gravity = false,
-    priority = 200,
+    priority = 1000,
   })
   pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line_0based, 0, {
     end_row = line_0based + 1,
