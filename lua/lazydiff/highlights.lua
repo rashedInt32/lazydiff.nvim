@@ -24,13 +24,18 @@ local function apply()
   -- LazydiffAdd / Change paint the in-buffer added line via line_hl_group;
   -- if we set fg here it overrides treesitter syntax colours, so it's bg-only.
   -- LazydiffDelete colours virtual deleted lines that have no syntax of their
-  -- own, so it keeps fg + bg. Sign groups (the +/- prefixes) keep fg + bg too.
+  -- own, so it keeps fg + bg.
+  --
+  -- Sign groups (+/- prefix) deliberately have NO bg: they render as fg-only
+  -- text sitting on top of the line_hl_group's band, which guarantees the
+  -- marker is visible against the band even when DiffAdd's fg and bg are too
+  -- close in luminance to contrast directly.
   local groups = {
     LazydiffAdd = { bg = da.bg, default = true },
     LazydiffChange = { bg = dc.bg, default = true },
     LazydiffDelete = { fg = dd.fg or fallbacks.delete, bg = dd.bg, default = true },
-    LazydiffAddSign = { fg = da.fg or fallbacks.add, bg = da.bg, bold = true, default = true },
-    LazydiffDeleteSign = { fg = dd.fg or fallbacks.delete, bg = dd.bg, bold = true, default = true },
+    LazydiffAddSign = { fg = da.fg or fallbacks.add, bold = true, default = true },
+    LazydiffDeleteSign = { fg = dd.fg or fallbacks.delete, bold = true, default = true },
     LazydiffHunkHeader = { fg = fn.fg or fallbacks.header, default = true },
   }
 

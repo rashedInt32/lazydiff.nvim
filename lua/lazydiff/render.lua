@@ -50,11 +50,20 @@ local function set_below(bufnr, anchor_0based, virt_lines)
 end
 
 local function mark_added_line(bufnr, line_0based, sign_text)
+  -- Split into two extmarks: a high-priority inline virt_text for the +
+  -- prefix, and a separate one for the line bg band. Keeping them on
+  -- distinct extmarks avoids any rendering interaction between
+  -- virt_text_pos="inline" and line_hl_group on the same mark, and makes
+  -- the prefix priority obvious at a glance.
   pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line_0based, 0, {
     virt_text = { { sign_text, "LazydiffAddSign" } },
     virt_text_pos = "inline",
-    line_hl_group = "LazydiffAdd",
     right_gravity = false,
+    priority = 200,
+  })
+  pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line_0based, 0, {
+    line_hl_group = "LazydiffAdd",
+    priority = 100,
   })
 end
 
