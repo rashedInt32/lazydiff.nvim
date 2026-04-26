@@ -7,27 +7,27 @@ local fallbacks = {
   header = 0xcba6f7,
 }
 
-local function fg_of(name, fallback)
+local function source_hl(name)
   local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-  if ok and hl and hl.fg then
-    return hl.fg
+  if ok and hl then
+    return hl
   end
-  return fallback
+  return {}
 end
 
 local function apply()
-  local add = fg_of("DiffAdd", fallbacks.add)
-  local del = fg_of("DiffDelete", fallbacks.delete)
-  local chg = fg_of("DiffChange", fallbacks.change)
-  local hdr = fg_of("Function", fallbacks.header)
+  local da = source_hl("DiffAdd")
+  local dd = source_hl("DiffDelete")
+  local dc = source_hl("DiffChange")
+  local fn = source_hl("Function")
 
   local groups = {
-    LazydiffAdd = { fg = add, bg = "NONE", default = true },
-    LazydiffDelete = { fg = del, bg = "NONE", default = true },
-    LazydiffChange = { fg = chg, bg = "NONE", default = true },
-    LazydiffAddSign = { fg = add, bg = "NONE", bold = true, default = true },
-    LazydiffDeleteSign = { fg = del, bg = "NONE", bold = true, default = true },
-    LazydiffHunkHeader = { fg = hdr, bg = "NONE", default = true },
+    LazydiffAdd = { fg = da.fg or fallbacks.add, bg = da.bg, default = true },
+    LazydiffDelete = { fg = dd.fg or fallbacks.delete, bg = dd.bg, default = true },
+    LazydiffChange = { fg = dc.fg or fallbacks.change, bg = dc.bg, default = true },
+    LazydiffAddSign = { fg = da.fg or fallbacks.add, bg = da.bg, bold = true, default = true },
+    LazydiffDeleteSign = { fg = dd.fg or fallbacks.delete, bg = dd.bg, bold = true, default = true },
+    LazydiffHunkHeader = { fg = fn.fg or fallbacks.header, default = true },
   }
 
   for name, spec in pairs(groups) do

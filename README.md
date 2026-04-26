@@ -81,26 +81,26 @@ require("lazydiff").setup({
 
 ## Highlight groups
 
-All defined as `default = true` so your overrides win. Foreground colours
-are pulled from `DiffAdd` / `DiffDelete` / `DiffChange` / `Function` at
-setup time and re-applied on `ColorScheme`. Background is forced to
-`NONE` to match the Claude/terminal-`git diff` look.
+All defined as `default = true` so your overrides win. Foreground and
+background are pulled from `DiffAdd` / `DiffDelete` / `DiffChange` /
+`Function` at setup time and re-applied on `ColorScheme` so theme
+switches still work.
 
-| Group                | Default                              |
-| -------------------- | ------------------------------------ |
-| `LazydiffAdd`        | fg of `DiffAdd`, no background        |
-| `LazydiffDelete`     | fg of `DiffDelete`, no background     |
-| `LazydiffChange`     | fg of `DiffChange`, no background     |
-| `LazydiffAddSign`    | bold, same fg as `LazydiffAdd`        |
-| `LazydiffDeleteSign` | bold, same fg as `LazydiffDelete`     |
-| `LazydiffHunkHeader` | fg of `Function`, no background       |
+| Group                | Default                                            |
+| -------------------- | -------------------------------------------------- |
+| `LazydiffAdd`        | fg + bg of `DiffAdd`                               |
+| `LazydiffDelete`     | fg + bg of `DiffDelete`                            |
+| `LazydiffChange`     | fg + bg of `DiffChange`                            |
+| `LazydiffAddSign`    | bold, fg + bg of `DiffAdd`                         |
+| `LazydiffDeleteSign` | bold, fg + bg of `DiffDelete`                      |
+| `LazydiffHunkHeader` | fg of `Function`, no background                    |
 
-Override example:
+If you want fg-only (Claude-style) instead of the lazygit/`git diff`
+look, override the bg to `NONE` after `setup()`:
 
 ```lua
-vim.api.nvim_set_hl(0, "LazydiffAdd",        { fg = "#a6e3a1" })
-vim.api.nvim_set_hl(0, "LazydiffDelete",     { fg = "#f38ba8" })
-vim.api.nvim_set_hl(0, "LazydiffHunkHeader", { fg = "#cba6f7" })
+vim.api.nvim_set_hl(0, "LazydiffAdd",    { fg = "#a6e3a1", bg = "NONE" })
+vim.api.nvim_set_hl(0, "LazydiffDelete", { fg = "#f38ba8", bg = "NONE" })
 ```
 
 ## Suggested keymap
