@@ -8,8 +8,10 @@ M.defaults = {
     context = "  ",
   },
   show_hunk_header = true,
-  read_only = true,
+  read_only = false,
   auto_refresh = true,
+  live_refresh = true,
+  debounce_ms = 100,
 }
 
 M.options = vim.deepcopy(M.defaults)

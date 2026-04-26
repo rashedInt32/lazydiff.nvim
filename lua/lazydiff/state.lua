@@ -14,7 +14,8 @@ local function ensure_highlights()
   end
 end
 
--- per-buffer state: { enabled, saved_modifiable, augroup, ref }
+-- per-buffer state:
+--   enabled, saved_modifiable, augroup, ref, baseline (old lines), timer
 local buffers = {}
 
 local function notify(msg, level)
@@ -33,7 +34,9 @@ local function buf_lines(bufnr)
   return vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 end
 
-local function compute_hunks(bufnr, ref)
+-- Fetch the reference blob once per overlay session. Returns the parsed
+-- old-lines array (cached on per-buffer state) or nil + an error string.
+local function prepare_baseline(bufnr, ref)
   local path = buf_path(bufnr)
   if not path then
     return nil, "buffer has no file"
@@ -62,9 +65,19 @@ local function compute_hunks(bufnr, ref)
     return nil, "binary file"
   end
 
-  local old_lines = git.split_lines(blob)
-  local new_lines = buf_lines(bufnr)
-  return diff.compute(old_lines, new_lines)
+  return git.split_lines(blob)
+end
+
+local function recompute(bufnr, baseline)
+  return diff.compute(baseline, buf_lines(bufnr))
+end
+
+local function stop_timer(state)
+  if state.timer then
+    pcall(state.timer.stop, state.timer)
+    pcall(state.timer.close, state.timer)
+    state.timer = nil
+  end
 end
 
 local function teardown_autocmds(state)
@@ -72,6 +85,23 @@ local function teardown_autocmds(state)
     pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
     state.augroup = nil
   end
+end
+
+local function debounced_refresh(bufnr, state)
+  if not config.options.live_refresh then
+    return
+  end
+  stop_timer(state)
+  state.timer = vim.uv.new_timer()
+  local ms = config.options.debounce_ms or 100
+  state.timer:start(
+    ms,
+    0,
+    vim.schedule_wrap(function()
+      stop_timer(state)
+      M.refresh(bufnr)
+    end)
+  )
 end
 
 local function setup_autocmds(bufnr, state)
@@ -89,6 +119,16 @@ local function setup_autocmds(bufnr, state)
       M.refresh(bufnr)
     end,
   })
+
+  if config.options.live_refresh then
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+      group = group,
+      buffer = bufnr,
+      callback = function()
+        debounced_refresh(bufnr, state)
+      end,
+    })
+  end
 
   vim.api.nvim_create_autocmd("BufDelete", {
     group = group,
@@ -113,12 +153,13 @@ function M.enable(bufnr, ref)
 
   ref = ref or config.options.ref
 
-  local hunks, err = compute_hunks(bufnr, ref)
-  if not hunks then
+  local baseline, err = prepare_baseline(bufnr, ref)
+  if not baseline then
     notify(err or "no diff available", vim.log.levels.WARN)
     return
   end
 
+  local hunks = recompute(bufnr, baseline)
   if #hunks == 0 then
     notify("no changes against " .. ref, vim.log.levels.INFO)
     return
@@ -130,6 +171,7 @@ function M.enable(bufnr, ref)
   end
   state.enabled = true
   state.ref = ref
+  state.baseline = baseline
   buffers[bufnr] = state
 
   render.render(bufnr, hunks)
@@ -147,6 +189,8 @@ function M.disable(bufnr)
   if not state then
     return
   end
+
+  stop_timer(state)
 
   if vim.api.nvim_buf_is_valid(bufnr) then
     render.clear(bufnr)
@@ -174,24 +218,13 @@ function M.refresh(bufnr)
   if not state or not state.enabled then
     return
   end
-
-  -- temporarily allow modifications via the API path; we'll restore.
-  local was_modifiable = vim.api.nvim_get_option_value("modifiable", { buf = bufnr })
-
-  local hunks, err = compute_hunks(bufnr, state.ref)
-  if not hunks then
-    notify(err or "refresh failed", vim.log.levels.WARN)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
     M.disable(bufnr)
     return
   end
 
+  local hunks = recompute(bufnr, state.baseline)
   render.render(bufnr, hunks)
-
-  if config.options.read_only then
-    vim.api.nvim_set_option_value("modifiable", false, { buf = bufnr })
-  else
-    vim.api.nvim_set_option_value("modifiable", was_modifiable, { buf = bufnr })
-  end
 end
 
 return M
