@@ -74,10 +74,33 @@ require("lazydiff").setup({
     context = "  ",
   },
   show_hunk_header = true,       -- show "@@ -a,b +c,d @@" between hunks
-  read_only = true,              -- make buffer non-modifiable while overlay is on
+  read_only = false,             -- lock the buffer while overlay is on (off by default)
   auto_refresh = true,           -- refresh on BufWritePost / FileChangedShellPost
+  live_refresh = true,           -- also refresh on TextChanged / TextChangedI
+  debounce_ms = 100,             -- debounce window for live refresh
 })
 ```
+
+### Writable mode (default)
+
+The overlay is editable by default — the primary workflow this plugin
+targets is reviewing an AI-generated patch and tweaking lines without
+leaving diff view. While typing, the diff repaints automatically via a
+debounced `TextChanged` listener (default 100 ms), and the `HEAD` blob
+is fetched once per toggle and reused for every refresh, so live
+updates don't shell out to git on every keystroke.
+
+Two caveats to know about:
+
+- Virtual deleted lines look like content but aren't part of the
+  buffer — `dd` on one is a no-op. The line you actually want to
+  delete is the buffer line, not the red preview above it.
+- If you commit / checkout while the overlay is active, the cached
+  baseline goes stale. Toggle off and on again to refresh it.
+
+To get the lock-the-buffer / viewer-style behaviour instead, set
+`read_only = true`. To disable the live repaint and only refresh on
+save, set `live_refresh = false`.
 
 ## Highlight groups
 
