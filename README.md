@@ -9,6 +9,8 @@ tab, no separate buffer.
 
 Built for the "review my AI-generated patch before I commit" loop.
 
+![lazydiff overlay rendering an added and a deleted hunk inline](screenshots/overlay.png)
+
 ## Status
 
 Early development. v0.1: working tree vs `HEAD`, full-buffer overlay,
