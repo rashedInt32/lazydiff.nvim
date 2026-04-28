@@ -12,6 +12,11 @@ M.defaults = {
   auto_refresh = true,
   live_refresh = true,
   debounce_ms = 100,
+  jump_on_enable = true,
+  nav = {
+    wrap = true,
+    center = true,
+  },
 }
 
 M.options = vim.deepcopy(M.defaults)

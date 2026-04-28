@@ -42,7 +42,10 @@ auto-refresh on save.
 ```lua
 {
   "rashedInt32/lazydiff.nvim",
-  cmd = { "Lazydiff", "LazydiffOff", "LazydiffRefresh" },
+  cmd = {
+    "Lazydiff", "LazydiffOff", "LazydiffRefresh",
+    "LazydiffNext", "LazydiffPrev", "LazydiffFirst",
+  },
   config = function()
     require("lazydiff").setup()
   end,
@@ -67,6 +70,9 @@ use({
 | `:Lazydiff`        | Toggle the overlay on the current buffer                |
 | `:LazydiffOff`     | Disable the overlay on the current buffer               |
 | `:LazydiffRefresh` | Recompute the diff and re-render (also runs auto on save) |
+| `:LazydiffNext`    | Jump to the next hunk                                   |
+| `:LazydiffPrev`    | Jump to the previous hunk                               |
+| `:LazydiffFirst`   | Jump to the first hunk                                  |
 
 ## Lua API
 
@@ -76,6 +82,9 @@ require("lazydiff").toggle(bufnr) -- bufnr defaults to current
 require("lazydiff").enable(bufnr)
 require("lazydiff").disable(bufnr)
 require("lazydiff").refresh(bufnr)
+require("lazydiff").goto_first(bufnr)
+require("lazydiff").goto_next(bufnr)
+require("lazydiff").goto_prev(bufnr)
 ```
 
 ## Defaults
@@ -93,6 +102,11 @@ require("lazydiff").setup({
   auto_refresh = true,           -- refresh on BufWritePost / FileChangedShellPost
   live_refresh = true,           -- also refresh on TextChanged / TextChangedI
   debounce_ms = 100,             -- debounce window for live refresh
+  jump_on_enable = true,         -- jump to the first hunk when toggling on
+  nav = {
+    wrap = true,                 -- ]h/[h wrap around at the last/first hunk
+    center = true,               -- center the cursor (zz) after jumping
+  },
 })
 ```
 
@@ -152,8 +166,15 @@ vim.api.nvim_set_hl(0, "LazydiffDelete", { fg = "#f38ba8", bg = "NONE" })
 The plugin doesn't bind keys by default. A common choice:
 
 ```lua
-vim.keymap.set("n", "<leader>dd", "<cmd>Lazydiff<cr>", { desc = "Toggle lazydiff" })
+vim.keymap.set("n", "<leader>dd", "<cmd>Lazydiff<cr>",     { desc = "Toggle lazydiff" })
+vim.keymap.set("n", "]h",         "<cmd>LazydiffNext<cr>", { desc = "Next lazydiff hunk" })
+vim.keymap.set("n", "[h",         "<cmd>LazydiffPrev<cr>", { desc = "Prev lazydiff hunk" })
 ```
+
+Toggling the overlay on already lands the cursor on the first hunk (skipped
+if you're already inside it). `]h` / `[h` walk the rest. We pick `]h`/`[h`
+rather than `]d`/`[d` because the latter is Neovim's built-in diagnostic
+motion — `]h`/`[h` matches the gitsigns convention.
 
 ## How it works
 

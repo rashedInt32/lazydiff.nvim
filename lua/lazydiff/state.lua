@@ -172,6 +172,7 @@ function M.enable(bufnr, ref)
   state.enabled = true
   state.ref = ref
   state.baseline = baseline
+  state.hunks = hunks
   buffers[bufnr] = state
 
   render.render(bufnr, hunks)
@@ -181,6 +182,14 @@ function M.enable(bufnr, ref)
   end
 
   setup_autocmds(bufnr, state)
+
+  if config.options.jump_on_enable then
+    local nav = require("lazydiff.nav")
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    if not nav.cursor_in_hunk(bufnr, hunks[1], row) then
+      nav.goto_first(bufnr)
+    end
+  end
 end
 
 function M.disable(bufnr)
@@ -224,7 +233,17 @@ function M.refresh(bufnr)
   end
 
   local hunks = recompute(bufnr, state.baseline)
+  state.hunks = hunks
   render.render(bufnr, hunks)
+end
+
+function M.get_hunks(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local state = buffers[bufnr]
+  if not state or not state.enabled then
+    return nil
+  end
+  return state.hunks
 end
 
 return M
