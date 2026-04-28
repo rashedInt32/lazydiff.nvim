@@ -24,6 +24,11 @@ that mark, so this one does.
 
 ![lazydiff overlay rendering an added and a deleted hunk inline](screenshots/overlay.png)
 
+https://github.com/user-attachments/assets/ed8254bf-5cfb-4a07-8dc4-74a18003271f
+
+Toggling the overlay, the auto-jump to the first hunk, and `]h` / `[h`
+navigation in action.
+
 ## Status
 
 Early development. v0.1: working tree vs `HEAD`, full-buffer overlay,
