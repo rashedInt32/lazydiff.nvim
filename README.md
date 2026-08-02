@@ -90,7 +90,7 @@ use({
 file on the left and the selected one on the right, rendered full-length
 with the same overlay.
 
-https://github.com/user-attachments/assets/1524aaec-e1d6-4ff3-ace9-ae591487b1eb
+https://github.com/user-attachments/assets/e6998ac5-1ca5-43c1-8f42-be4e75b04235
 
 Opening the float, moving through the file list, and jumping into a file
 with `<CR>`.
