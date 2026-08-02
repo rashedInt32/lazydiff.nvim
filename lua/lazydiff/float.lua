@@ -75,9 +75,13 @@ local function geometry()
   local top = math.max(math.floor((avail_h - height) / 2), 0)
   local left = math.max(math.floor((ew - width) / 2), 0)
 
+  -- nvim_open_win's row/col place the window's *border* top-left, not its
+  -- content, so no extra offset is added here. The two panes sit flush: the
+  -- sidebar's footprint is list_w + 2 columns (content plus both borders),
+  -- and the review pane starts immediately after it.
   return {
-    list = { row = top + 1, col = left + 1, width = list_w, height = inner_h },
-    pane = { row = top + 1, col = left + 1 + list_w + 2, width = pane_w, height = inner_h },
+    list = { row = top, col = left, width = list_w, height = inner_h },
+    pane = { row = top, col = left + list_w + 2, width = pane_w, height = inner_h },
   }
 end
 
