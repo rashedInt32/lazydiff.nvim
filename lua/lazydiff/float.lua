@@ -41,12 +41,25 @@ local function resolve(value, total)
   return math.floor(value)
 end
 
+-- Rows at the bottom of the editor that aren't ours to cover: the cmdline,
+-- plus one for the global statusline when laststatus = 3. Everything above
+-- that is available, so height = 1.0 fills the editor area exactly instead of
+-- leaving an arbitrary margin.
+local function reserved_rows()
+  local n = vim.o.cmdheight
+  if vim.o.laststatus == 3 then
+    n = n + 1
+  end
+  return math.max(n, 1)
+end
+
 local function geometry()
   local cfg = config.options.float
   local ew, eh = vim.o.columns, vim.o.lines
+  local avail_h = math.max(eh - reserved_rows(), 8)
 
   local width = math.min(math.max(resolve(cfg.width, ew), 40), math.max(ew - 2, 20))
-  local height = math.min(math.max(resolve(cfg.height, eh), 10), math.max(eh - 2, 8))
+  local height = math.min(math.max(resolve(cfg.height, eh), 10), avail_h)
 
   -- Each bordered window costs 2 columns and 2 lines beyond its content size,
   -- and two of them sit side by side inside the overall footprint.
@@ -57,7 +70,9 @@ local function geometry()
   list_w = math.min(math.max(list_w, 16), math.max(inner_w - 20, 16))
   local pane_w = math.max(inner_w - list_w, 10)
 
-  local top = math.max(math.floor((eh - height) / 2), 0)
+  -- Centred in the editor area, not the whole terminal, so the statusline
+  -- doesn't push the float visually low.
+  local top = math.max(math.floor((avail_h - height) / 2), 0)
   local left = math.max(math.floor((ew - width) / 2), 0)
 
   return {
