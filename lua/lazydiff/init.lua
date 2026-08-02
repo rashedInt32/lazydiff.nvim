@@ -33,4 +33,16 @@ function M.goto_prev(bufnr)
   return require("lazydiff.nav").goto_prev(bufnr or vim.api.nvim_get_current_buf())
 end
 
+function M.open_float()
+  return require("lazydiff.float").open()
+end
+
+function M.close_float()
+  return require("lazydiff.float").close()
+end
+
+function M.toggle_float()
+  return require("lazydiff.float").toggle()
+end
+
 return M

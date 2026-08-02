@@ -17,6 +17,25 @@ M.defaults = {
     wrap = true,
     center = true,
   },
+  -- Float mode: a lazygit-style popup listing every uncommitted file, with the
+  -- selected one rendered full-length using the same overlay as inline mode.
+  float = {
+    width = 0.9,          -- fraction of the editor (>1 = absolute columns)
+    height = 0.9,         -- fraction of the editor (>1 = absolute lines)
+    sidebar = 0.3,        -- fraction of the float's width (>1 = absolute columns)
+    border = "rounded",
+    title = " lazydiff ",
+    number = true,        -- line numbers in the review pane
+    keys = {
+      close = { "q", "<Esc>" },
+      refresh = "R",
+      open_file = "<CR>",
+      next_hunk = "]h",
+      prev_hunk = "[h",
+      focus_list = "<C-h>",
+      focus_pane = "<C-l>",
+    },
+  },
 }
 
 M.options = vim.deepcopy(M.defaults)

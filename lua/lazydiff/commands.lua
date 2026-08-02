@@ -24,6 +24,14 @@ function M.setup()
   vim.api.nvim_create_user_command("LazydiffFirst", function()
     require("lazydiff").goto_first()
   end, { desc = "Jump to the first lazydiff hunk" })
+
+  vim.api.nvim_create_user_command("LazydiffFloat", function()
+    require("lazydiff").toggle_float()
+  end, { desc = "Toggle the lazydiff float over all uncommitted files" })
+
+  vim.api.nvim_create_user_command("LazydiffFloatOff", function()
+    require("lazydiff").close_float()
+  end, { desc = "Close the lazydiff float" })
 end
 
 return M

@@ -5,6 +5,7 @@ local fallbacks = {
   delete = 0xf38ba8,
   change = 0xf9e2af,
   header = 0xcba6f7,
+  dim = 0x6c7086,
 }
 
 local function source_hl(name)
@@ -13,6 +14,30 @@ local function source_hl(name)
     return hl
   end
   return {}
+end
+
+-- First non-nil fg across `names`, else `fallback`. The diff-oriented groups
+-- (DiffAdd etc.) are frequently bg-only, so the float's status letters and
+-- counts -- which are fg-only text -- source from Added/Removed/Changed first.
+local function first_fg(names, fallback)
+  for _, name in ipairs(names) do
+    local hl = source_hl(name)
+    if hl.fg then
+      return hl.fg
+    end
+  end
+  return fallback
+end
+
+-- First non-nil bg across `names`, else nil.
+local function first_bg(names)
+  for _, name in ipairs(names) do
+    local hl = source_hl(name)
+    if hl.bg then
+      return hl.bg
+    end
+  end
+  return nil
 end
 
 local function apply()
@@ -39,6 +64,29 @@ local function apply()
     LazydiffAddSign = { fg = da.fg or fallbacks.add, bg = nm.bg, bold = true, default = true },
     LazydiffDeleteSign = { fg = dd.fg or fallbacks.delete, bg = nm.bg, bold = true, default = true },
     LazydiffHunkHeader = { fg = fn.fg or fallbacks.header, default = true },
+  }
+
+  -- Float mode. Status letters and counts are fg-only text in the sidebar, so
+  -- they source from the fg-carrying groups first (see first_fg).
+  local add_fg = first_fg({ "Added", "GitSignsAdd", "DiffAdd" }, fallbacks.add)
+  local del_fg = first_fg({ "Removed", "GitSignsDelete", "DiffDelete" }, fallbacks.delete)
+  local chg_fg = first_fg({ "Changed", "GitSignsChange", "DiffChange" }, fallbacks.change)
+  local dim_fg = first_fg({ "Comment", "NonText" }, fallbacks.dim)
+
+  groups.LazydiffStatusModified = { fg = chg_fg, default = true }
+  groups.LazydiffStatusAdded = { fg = add_fg, default = true }
+  groups.LazydiffStatusDeleted = { fg = del_fg, default = true }
+  groups.LazydiffStatusRenamed = { fg = fn.fg or fallbacks.header, default = true }
+  groups.LazydiffStatusUntracked = { fg = dim_fg, default = true }
+  groups.LazydiffCountAdd = { fg = add_fg, default = true }
+  groups.LazydiffCountDelete = { fg = del_fg, default = true }
+  groups.LazydiffFloatPath = { fg = nm.fg, default = true }
+  groups.LazydiffFloatDim = { fg = dim_fg, default = true }
+  groups.LazydiffFloatTitle = { fg = fn.fg or fallbacks.header, bold = true, default = true }
+  groups.LazydiffFloatSelected = {
+    bg = first_bg({ "CursorLine", "Visual" }),
+    bold = true,
+    default = true,
   }
 
   for name, spec in pairs(groups) do

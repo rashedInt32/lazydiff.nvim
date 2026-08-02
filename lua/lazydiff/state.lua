@@ -22,6 +22,16 @@ local function notify(msg, level)
   vim.notify("lazydiff: " .. msg, level or vim.log.levels.INFO)
 end
 
+-- Every Neovim API call takes 0 to mean "current buffer", so callers reasonably
+-- pass it here too -- but 0 is truthy in Lua, so `bufnr or current()` keeps it
+-- and the lookup lands on buffers[0], which is never populated. Normalize once.
+local function resolve(bufnr)
+  if not bufnr or bufnr == 0 then
+    return vim.api.nvim_get_current_buf()
+  end
+  return bufnr
+end
+
 local function buf_path(bufnr)
   local name = vim.api.nvim_buf_get_name(bufnr)
   if name == "" then
@@ -140,13 +150,13 @@ local function setup_autocmds(bufnr, state)
 end
 
 function M.is_enabled(bufnr)
-  local s = buffers[bufnr]
+  local s = buffers[resolve(bufnr)]
   return s ~= nil and s.enabled == true
 end
 
 function M.enable(bufnr, ref)
   ensure_highlights()
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  bufnr = resolve(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
@@ -193,7 +203,7 @@ function M.enable(bufnr, ref)
 end
 
 function M.disable(bufnr)
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  bufnr = resolve(bufnr)
   local state = buffers[bufnr]
   if not state then
     return
@@ -213,7 +223,7 @@ function M.disable(bufnr)
 end
 
 function M.toggle(bufnr)
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  bufnr = resolve(bufnr)
   if M.is_enabled(bufnr) then
     M.disable(bufnr)
   else
@@ -222,7 +232,7 @@ function M.toggle(bufnr)
 end
 
 function M.refresh(bufnr)
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  bufnr = resolve(bufnr)
   local state = buffers[bufnr]
   if not state or not state.enabled then
     return
@@ -237,8 +247,29 @@ function M.refresh(bufnr)
   render.render(bufnr, hunks)
 end
 
+-- Register hunks computed elsewhere (the float's scratch pane) so nav.lua can
+-- navigate the buffer. Deliberately skips what enable() does around it: no
+-- autocmds and no timers, because the float refreshes manually, and no
+-- baseline fetch, because prepare_baseline() derives the blob from the
+-- buffer's filename and a scratch buffer has none. (Naming the scratch buffer
+-- after the real file isn't an option -- duplicate buffer names raise E95.)
+function M.attach(bufnr, opts)
+  bufnr = resolve(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  ensure_highlights()
+  buffers[bufnr] = {
+    enabled = true,
+    external = true,
+    ref = opts.ref,
+    baseline = opts.baseline,
+    hunks = opts.hunks,
+  }
+end
+
 function M.get_hunks(bufnr)
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  bufnr = resolve(bufnr)
   local state = buffers[bufnr]
   if not state or not state.enabled then
     return nil
