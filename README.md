@@ -90,16 +90,12 @@ use({
 file on the left and the selected one on the right, rendered full-length
 with the same overlay.
 
-```
-╭─ lazydiff · 4 files ──┬──────────────────────────────────────────╮
-│ M lua/state.lua +12-3 │ lua/lazydiff/state.lua                   │
-│ M lua/render.lua +3-0 │                                          │
-│ A lua/float.lua +88-0 │   @@ -71,6 +71,9 @@                      │
-│ D lua/legacy.lua +0-40│ - local function recompute(bufnr)        │
-│                       │ + local function recompute(bufnr, base)  │
-╰───────────────────────┴──────────────────────────────────────────╯
-  j/k select · <CR> open file · ]h/[h hunk · R refresh · q close
-```
+https://github.com/user-attachments/assets/1524aaec-e1d6-4ff3-ace9-ae591487b1eb
+
+Opening the float, moving through the file list, and jumping into a file
+with `<CR>`.
+
+![lazydiff float mode: uncommitted files on the left, the selected file rendered full-length with the diff overlay on the right](screenshots/float.png)
 
 Moving the cursor in the sidebar renders that file on the right. `<CR>`
 closes the float and opens the real file with the inline overlay on, at
