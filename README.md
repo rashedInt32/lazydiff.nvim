@@ -33,13 +33,18 @@ navigation in action.
 
 Early development. v0.1: working tree vs `HEAD`, full-buffer overlay,
 auto-refresh on save. v0.2 adds [float mode](#float-mode) — the same
-overlay across every uncommitted file in a lazygit-style popup.
+overlay across every uncommitted file in a lazygit-style popup. v0.3 adds
+word-level highlighting, hunk reset / yank, ref arguments, automatic
+baseline refresh after commits, and folding of unchanged context in the
+float.
 
 ## Requirements
 
 - Neovim ≥ 0.10 (uses `vim.diff` with `result_type = "indices"` and
   `vim.system`)
 - `git` on `$PATH`
+
+Run `:checkhealth lazydiff` to confirm both.
 
 ## Install
 
@@ -51,6 +56,7 @@ overlay across every uncommitted file in a lazygit-style popup.
   cmd = {
     "Lazydiff", "LazydiffOff", "LazydiffRefresh",
     "LazydiffNext", "LazydiffPrev", "LazydiffFirst",
+    "LazydiffReset", "LazydiffYank",
     "LazydiffFloat", "LazydiffFloatOff",
   },
   config = function()
@@ -72,16 +78,37 @@ use({
 
 ## Commands
 
-| Command            | What it does                                            |
-| ------------------ | ------------------------------------------------------- |
-| `:Lazydiff`        | Toggle the overlay on the current buffer                |
-| `:LazydiffOff`     | Disable the overlay on the current buffer               |
-| `:LazydiffRefresh` | Recompute the diff and re-render (also runs auto on save) |
-| `:LazydiffNext`    | Jump to the next hunk                                   |
-| `:LazydiffPrev`    | Jump to the previous hunk                               |
-| `:LazydiffFirst`   | Jump to the first hunk                                  |
-| `:LazydiffFloat`   | Toggle the float over **every** uncommitted file        |
-| `:LazydiffFloatOff`| Close the float                                         |
+| Command               | What it does                                                    |
+| --------------------- | --------------------------------------------------------------- |
+| `:Lazydiff [ref]`     | Toggle the overlay on the current buffer, optionally against `ref` |
+| `:LazydiffOff`        | Disable the overlay on the current buffer                       |
+| `:LazydiffRefresh`    | Refetch the baseline from git and re-render                     |
+| `:LazydiffNext`       | Jump to the next hunk                                           |
+| `:LazydiffPrev`       | Jump to the previous hunk                                       |
+| `:LazydiffFirst`      | Jump to the first hunk                                          |
+| `:LazydiffReset`      | Revert the hunk under the cursor to the baseline                |
+| `:LazydiffYank [reg]` | Yank the hunk's deleted lines into a register (default `"`)     |
+| `:LazydiffFloat [ref]`| Toggle the float over **every** changed file, optionally against `ref` |
+| `:LazydiffFloatOff`   | Close the float                                                 |
+
+`ref` completes against branches and tags. `:Lazydiff main` reviews the
+buffer against `main`; running it again with the same ref turns the overlay
+off, and a bare `:Lazydiff` turns off whatever ref is active.
+
+## Reviewing a patch
+
+The overlay is editable, so the review loop is: read the hunk, fix what
+you don't like in place, or reject it outright.
+
+- `:LazydiffReset` on a hunk puts the baseline's lines back. On an added
+  block it deletes the block; on a deleted block it reinserts the red lines.
+- `:LazydiffYank` copies the red lines — which `y` can't reach, since they're
+  virtual — into a register, linewise.
+- Changed words inside a change hunk are emphasised (`word_diff`), so a
+  one-token edit on a long line is spotted without reading the whole line.
+
+You can also toggle the overlay on a file that has no changes yet. It stays
+armed and paints as soon as you type.
 
 ## Float mode
 
@@ -107,33 +134,49 @@ can't reorder while you're reading it. Press `R` to pick up changes made
 behind the float; your selection is restored by path, not by row.
 
 The review pane is read-only. Renames are listed once, under their new
-path; binary files show a placeholder instead of garbage.
+path; binary files show a placeholder instead of garbage. `<Tab>` folds
+everything except the hunks and a few lines of context around them, which
+is the lazygit view of a long file with a small change.
 
-| Key           | In the sidebar          | In the review pane   |
-| ------------- | ----------------------- | -------------------- |
-| `j` / `k`     | select file             | move                 |
+| Key           | In the sidebar          | In the review pane     |
+| ------------- | ----------------------- | ---------------------- |
+| `j` / `k`     | select file             | move                   |
 | `<CR>`        | open file, close float  | open file, close float |
-| `]h` / `[h`   | —                       | next / previous hunk |
-| `R`           | refresh                 | refresh              |
-| `<C-l>`       | focus review pane       | —                    |
-| `<C-h>`       | —                       | focus sidebar        |
-| `q` / `<Esc>` | close                   | close                |
+| `]h` / `[h`   | —                       | next / previous hunk   |
+| `]f` / `[f`   | next / previous file    | next / previous file   |
+| `<Tab>`       | fold unchanged context  | fold unchanged context |
+| `R`           | refresh                 | refresh                |
+| `<C-l>`       | focus review pane       | —                      |
+| `<C-h>`       | —                       | focus sidebar          |
+| `q` / `<Esc>` | close                   | close                  |
 
 ## Lua API
 
 ```lua
-require("lazydiff").setup(opts)   -- merge opts on top of defaults
-require("lazydiff").toggle(bufnr) -- bufnr defaults to current
-require("lazydiff").enable(bufnr)
+require("lazydiff").setup(opts)          -- merge opts on top of defaults
+require("lazydiff").toggle(bufnr, ref)   -- bufnr defaults to current; ref optional
+require("lazydiff").enable(bufnr, ref)
 require("lazydiff").disable(bufnr)
-require("lazydiff").refresh(bufnr)
+require("lazydiff").refresh(bufnr, { baseline = true })  -- refetch from git first
+require("lazydiff").is_enabled(bufnr)
 require("lazydiff").goto_first(bufnr)
 require("lazydiff").goto_next(bufnr)
 require("lazydiff").goto_prev(bufnr)
+require("lazydiff").reset_hunk(bufnr)
+require("lazydiff").yank_hunk(bufnr, register)
+require("lazydiff").status(bufnr)        -- { ref, hunks, current } or nil
+require("lazydiff").statusline(bufnr)    -- "lazydiff: hunk 2/5" or ""
 
-require("lazydiff").toggle_float()
-require("lazydiff").open_float()
+require("lazydiff").toggle_float({ ref = "main" })
+require("lazydiff").open_float({ ref = "main" })
 require("lazydiff").close_float()
+```
+
+`statusline()` is meant for a statusline component:
+
+```lua
+-- lualine
+sections = { lualine_x = { function() return require("lazydiff").statusline() end } }
 ```
 
 ## Defaults
@@ -142,15 +185,17 @@ require("lazydiff").close_float()
 require("lazydiff").setup({
   ref = "HEAD",                  -- ref to diff the working tree against
   signs = {
-    add = "+ ",                  -- prefix on added lines (inline virt_text)
+    add = "+",                   -- sign-column marker on added lines (max 2 cells)
     delete = "- ",               -- prefix on virt_lines for deleted content
-    context = "  ",
   },
   show_hunk_header = true,       -- show "@@ -a,b +c,d @@" between hunks
+  word_diff = true,              -- emphasise changed words inside change hunks
   read_only = false,             -- lock the buffer while overlay is on (off by default)
-  auto_refresh = true,           -- refresh on BufWritePost / FileChangedShellPost
+  auto_refresh = true,           -- refresh on BufWritePost / FileChangedShellPost / BufReadPost
   live_refresh = true,           -- also refresh on TextChanged / TextChangedI
   debounce_ms = 100,             -- debounce window for live refresh
+  watch_git = true,              -- refetch the baseline when HEAD or the index change
+  force_signcolumn = true,       -- turn signcolumn on while the overlay is active
   jump_on_enable = true,         -- jump to the first hunk when toggling on
   nav = {
     wrap = true,                 -- ]h/[h wrap around at the last/first hunk
@@ -163,12 +208,18 @@ require("lazydiff").setup({
     border = "rounded",
     title = " lazydiff ",
     number = true,               -- line numbers in the review pane
+    select_debounce_ms = 40,     -- let the cursor settle before rendering a file
+    fold_context = false,        -- start with unchanged regions folded
+    context_lines = 3,           -- lines kept visible around each hunk when folded
     keys = {
       close = { "q", "<Esc>" },
       refresh = "R",
       open_file = "<CR>",
       next_hunk = "]h",
       prev_hunk = "[h",
+      next_file = "]f",
+      prev_file = "[f",
+      toggle_fold = "<Tab>",
       focus_list = "<C-h>",
       focus_pane = "<C-l>",
     },
@@ -176,22 +227,26 @@ require("lazydiff").setup({
 })
 ```
 
+`setup()` validates option types and raises on a mismatch, so a typo like
+`float = { width = "0.9" }` fails loudly instead of rendering oddly.
+
 ### Writable mode (default)
 
 The overlay is editable by default — the primary workflow this plugin
 targets is reviewing an AI-generated patch and tweaking lines without
 leaving diff view. While typing, the diff repaints automatically via a
-debounced `TextChanged` listener (default 100 ms), and the `HEAD` blob
-is fetched once per toggle and reused for every refresh, so live
-updates don't shell out to git on every keystroke.
+debounced `TextChanged` listener (default 100 ms). The baseline blob is
+fetched once per toggle and reused for every keystroke, so live updates
+don't shell out to git while you type.
 
-Two caveats to know about:
+The baseline is refetched when it's likely to have moved: on save, on
+`:e!`, and — with `watch_git` — whenever HEAD or the index change, so a
+commit or checkout made from a terminal shows up within a moment.
+`:LazydiffRefresh` forces it.
 
-- Virtual deleted lines look like content but aren't part of the
-  buffer — `dd` on one is a no-op. The line you actually want to
-  delete is the buffer line, not the red preview above it.
-- If you commit / checkout while the overlay is active, the cached
-  baseline goes stale. Toggle off and on again to refresh it.
+One caveat: virtual deleted lines look like content but aren't part of the
+buffer — `dd` on one is a no-op. Use `:LazydiffReset` to put them back, or
+`:LazydiffYank` to copy them.
 
 To get the lock-the-buffer / viewer-style behaviour instead, set
 `read_only = true`. To disable the live repaint and only refresh on
@@ -199,24 +254,25 @@ save, set `live_refresh = false`.
 
 ## Highlight groups
 
-All defined as `default = true` so your overrides win. Foreground and
-background are pulled from `DiffAdd` / `DiffDelete` / `DiffChange` /
-`Function` at setup time and re-applied on `ColorScheme` so theme
-switches still work.
+All defined as `default = true` so your overrides win. Colours are pulled
+from `DiffAdd` / `DiffDelete` / `Function` / `Normal` at setup time and
+re-applied on `ColorScheme` so theme switches still work.
 
-`LazydiffAdd` / `LazydiffChange` paint the in-buffer line via
-`line_hl_group`, so they're **bg-only** — setting a fg there would
-override treesitter / syntax colours on the added line. `LazydiffDelete`
-colours virtual deleted lines (which have no syntax of their own), so
-it carries both fg and bg.
+`LazydiffAdd` paints the in-buffer line via `hl_group` + `hl_eol`, so it's
+**bg-only** — setting a fg there would override treesitter / syntax colours
+on the added line. `LazydiffDelete` colours virtual deleted lines (which
+have no syntax of their own), so it carries both fg and bg. The `*Word`
+groups are a stronger shade of the line band; on schemes where `DiffAdd`
+has no background they fall back to bold + underline.
 
 | Group                | Default                                              |
 | -------------------- | ---------------------------------------------------- |
 | `LazydiffAdd`        | bg of `DiffAdd` (no fg, preserves syntax)            |
-| `LazydiffChange`     | bg of `DiffChange` (no fg, preserves syntax)         |
 | `LazydiffDelete`     | fg + bg of `DiffDelete`                              |
-| `LazydiffAddSign`    | bold, fg + bg of `DiffAdd`                           |
-| `LazydiffDeleteSign` | bold, fg + bg of `DiffDelete`                        |
+| `LazydiffAddWord`    | bold, `LazydiffAdd` bg blended toward `Normal` fg    |
+| `LazydiffDeleteWord` | bold, `LazydiffDelete` bg blended toward `Normal` fg |
+| `LazydiffAddSign`    | bold, fg of `DiffAdd`, bg of `Normal`                |
+| `LazydiffDeleteSign` | bold, fg of `DiffDelete`, bg of `Normal`             |
 | `LazydiffHunkHeader` | fg of `Function`, no background                      |
 
 Float mode adds the groups below. These are fg-only text in the sidebar, so
@@ -237,6 +293,7 @@ foreground in most colorschemes) and fall back to `DiffAdd` / `DiffDelete` /
 | `LazydiffFloatDim`          | fg of `Comment`                          |
 | `LazydiffFloatTitle`        | bold, fg of `Function`                   |
 | `LazydiffFloatSelected`     | bg of `CursorLine` / `Visual`, bold      |
+| `LazydiffFold`              | fg of `Comment` (folded-context lines)   |
 
 If you want fg-only (Claude-style) instead of the lazygit/`git diff`
 look, override the bg to `NONE` after `setup()`:
@@ -253,6 +310,7 @@ The plugin doesn't bind keys by default. A common choice:
 ```lua
 vim.keymap.set("n", "<leader>dd", "<cmd>Lazydiff<cr>",      { desc = "Toggle lazydiff" })
 vim.keymap.set("n", "<leader>dD", "<cmd>LazydiffFloat<cr>", { desc = "Lazydiff float (all changes)" })
+vim.keymap.set("n", "<leader>dr", "<cmd>LazydiffReset<cr>", { desc = "Revert hunk under cursor" })
 vim.keymap.set("n", "]h",         "<cmd>LazydiffNext<cr>",  { desc = "Next lazydiff hunk" })
 vim.keymap.set("n", "[h",         "<cmd>LazydiffPrev<cr>",  { desc = "Prev lazydiff hunk" })
 ```
@@ -272,29 +330,35 @@ KEEP=1 tests/run.sh   # leave the fixture repos behind to poke at
 No test framework and no dependencies — a headless Neovim (`nvim -l`) driving
 the plugin against throwaway git repos built by `tests/fixture.sh`. The fixture
 has one file per case the float has to survive: modified, deleted, renamed,
-untracked, binary, a path containing a space, and one unchanged file that must
-*not* show up.
+untracked, untracked binary, tracked binary, a path containing a space, one
+unchanged file that must *not* show up, and a second commit so `HEAD~1` is a
+real ref.
 
 The load-bearing assertion is that hunks rendered in float mode are identical
 (kind and all four offsets) to hunks rendered by `:Lazydiff` on the same file
 opened normally — the two paths share `diff.compute` and `render.render`, and
 the suite exists to keep them from drifting.
 
+CI runs the suite plus `stylua --check` and `luacheck` on every push.
+
 ## How it works
 
-1. On toggle, lazydiff runs `git show HEAD:<relpath>` to fetch the
+1. On toggle, lazydiff runs `git show <ref>:<relpath>` to fetch the
    committed version of the file.
 2. The buffer contents and the committed blob are fed into `vim.diff`
    with `algorithm = "histogram"` and `ctxlen = 0`.
 3. Hunk boundaries are normalized to strip equal leading/trailing lines.
-4. The renderer paints, in a single namespace:
-   - inline `virt_text` `+ ` prefixes on added lines, with
-     `line_hl_group = LazydiffAdd` for fg-only line tinting,
-   - `virt_lines_above` for deleted lines (`- ` prefix +
-     `LazydiffDelete`),
+4. For change hunks whose lines pair up, each pair is tokenised and diffed
+   again to find the changed words.
+5. The renderer paints, in a single namespace:
+   - a `+` sign in the sign column plus `LazydiffAdd` across the line for
+     added lines, with `LazydiffAddWord` on changed spans,
+   - `virt_lines_above` for deleted lines (`- ` prefix + `LazydiffDelete`,
+     with `LazydiffDeleteWord` on changed spans),
    - a `@@ -a,b +c,d @@` virt_line above each hunk.
-5. The buffer is set to `nomodifiable` while the overlay is active, so
-   typos don't accidentally shred the diff. Toggle off to edit again.
+6. Autocmds keep it current: a debounced repaint while typing, a baseline
+   refetch on save / reload, and a watcher on the git directory that
+   refetches after commits and checkouts.
 
 ## Why not just use…
 

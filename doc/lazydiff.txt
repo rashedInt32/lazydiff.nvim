@@ -1,0 +1,220 @@
+*lazydiff.txt*    Inline, lazygit-style diff overlay for the buffer you're editing
+
+Author:  rashed parvez
+License: MIT
+
+==============================================================================
+CONTENTS                                                    *lazydiff-contents*
+
+  1. Introduction ........................... |lazydiff-introduction|
+  2. Requirements ........................... |lazydiff-requirements|
+  3. Commands ............................... |lazydiff-commands|
+  4. Float mode ............................. |lazydiff-float|
+  5. Lua API ................................ |lazydiff-api|
+  6. Configuration .......................... |lazydiff-config|
+  7. Highlight groups ....................... |lazydiff-highlights|
+  8. Health ................................. |lazydiff-health|
+
+==============================================================================
+1. INTRODUCTION                                         *lazydiff-introduction*
+
+lazydiff renders the diff between the buffer and a git ref (default `HEAD`)
+in place, using extmarks: deleted lines appear as red virtual lines above
+their old position, added lines get a `+` in the sign column and a coloured
+band, and a `@@ -a,b +c,d @@` header sits above each hunk. The buffer stays
+editable; the overlay repaints as you type.
+
+==============================================================================
+2. REQUIREMENTS                                         *lazydiff-requirements*
+
+- Neovim 0.10 or newer
+- `git` on `$PATH`
+
+==============================================================================
+3. COMMANDS                                                 *lazydiff-commands*
+
+                                                                   *:Lazydiff*
+:Lazydiff [{ref}]
+    Toggle the overlay on the current buffer. With {ref}, diff against that
+    ref instead of |lazydiff-config| `ref`. Running it again with the same
+    ref turns the overlay off; a bare `:Lazydiff` turns off whatever ref is
+    active. {ref} completes against branches and tags.
+
+    Toggling on a file with no changes keeps the overlay armed: it paints as
+    soon as the buffer diverges from the baseline.
+
+                                                                *:LazydiffOff*
+:LazydiffOff
+    Disable the overlay on the current buffer.
+
+                                                            *:LazydiffRefresh*
+:LazydiffRefresh
+    Refetch the baseline blob from git and re-render.
+
+                                       *:LazydiffNext* *:LazydiffPrev* *:LazydiffFirst*
+:LazydiffNext
+:LazydiffPrev
+:LazydiffFirst
+    Move the cursor between hunks. `]h` / `[h` wrap when `nav.wrap` is set.
+
+                                                              *:LazydiffReset*
+:LazydiffReset
+    Put the baseline's lines back in place of the hunk under the cursor.
+    On an added block this deletes it; on a deleted block it reinserts the
+    red lines. The buffer is made modifiable for the edit if needed.
+
+                                                               *:LazydiffYank*
+:LazydiffYank [{register}]
+    Yank the deleted lines of the hunk under the cursor, linewise, into
+    {register} (default the unnamed register). Virtual lines cannot be
+    yanked with `y`; this is the way to copy them.
+
+                                                              *:LazydiffFloat*
+:LazydiffFloat [{ref}]
+    Toggle the float over every file differing from {ref} (or the
+    configured `ref`) plus untracked files. See |lazydiff-float|.
+
+                                                           *:LazydiffFloatOff*
+:LazydiffFloatOff
+    Close the float.
+
+==============================================================================
+4. FLOAT MODE                                                  *lazydiff-float*
+
+A lazygit-style popup: the changed-file list on the left, the selected file
+rendered full-length with the overlay on the right. The list is a snapshot;
+press `R` to refresh it. The selection is restored by path.
+
+Keys (configurable via `float.keys`):
+
+  `j` / `k`        select file (sidebar)
+  `<CR>`           close the float and open the file with the overlay on
+  `]h` / `[h`      next / previous hunk (pane)
+  `]f` / `[f`      next / previous file
+  `<Tab>`          fold unchanged context, leaving `float.context_lines`
+                   around each hunk
+  `R`              refresh
+  `<C-l>` / `<C-h>` move focus between sidebar and pane
+  `q` / `<Esc>`    close
+
+The pane is read-only. Binary files show a placeholder. Renames are listed
+once under the new path.
+
+==============================================================================
+5. LUA API                                                       *lazydiff-api*
+
+All `bufnr` arguments default to the current buffer (nil or 0).
+>lua
+  require("lazydiff").setup(opts)
+  require("lazydiff").toggle(bufnr, ref)
+  require("lazydiff").enable(bufnr, ref)
+  require("lazydiff").disable(bufnr)
+  require("lazydiff").refresh(bufnr, { baseline = true })
+  require("lazydiff").is_enabled(bufnr)
+  require("lazydiff").goto_first(bufnr)
+  require("lazydiff").goto_next(bufnr)
+  require("lazydiff").goto_prev(bufnr)
+  require("lazydiff").reset_hunk(bufnr)
+  require("lazydiff").yank_hunk(bufnr, register)
+  require("lazydiff").status(bufnr)      -- { ref, hunks, current } or nil
+  require("lazydiff").statusline(bufnr)  -- "lazydiff: hunk 2/5" or ""
+  require("lazydiff").toggle_float({ ref = "main" })
+  require("lazydiff").open_float({ ref = "main" })
+  require("lazydiff").close_float()
+<
+==============================================================================
+6. CONFIGURATION                                              *lazydiff-config*
+
+Defaults:
+>lua
+  require("lazydiff").setup({
+    ref = "HEAD",
+    signs = { add = "+", delete = "- " },
+    show_hunk_header = true,
+    word_diff = true,
+    read_only = false,
+    auto_refresh = true,
+    live_refresh = true,
+    debounce_ms = 100,
+    watch_git = true,
+    force_signcolumn = true,
+    jump_on_enable = true,
+    nav = { wrap = true, center = true },
+    float = {
+      width = 0.9,
+      height = 0.9,
+      sidebar = 0.3,
+      border = "rounded",
+      title = " lazydiff ",
+      number = true,
+      select_debounce_ms = 40,
+      fold_context = false,
+      context_lines = 3,
+      keys = {
+        close = { "q", "<Esc>" },
+        refresh = "R",
+        open_file = "<CR>",
+        next_hunk = "]h",
+        prev_hunk = "[h",
+        next_file = "]f",
+        prev_file = "[f",
+        toggle_fold = "<Tab>",
+        focus_list = "<C-h>",
+        focus_pane = "<C-l>",
+      },
+    },
+  })
+<
+`ref`               Ref the working tree is diffed against.
+`signs.add`         Sign-column marker on added lines (max 2 cells).
+`signs.delete`      Prefix on the virtual lines showing deleted content.
+`show_hunk_header`  Show `@@ -a,b +c,d @@` above each hunk.
+`word_diff`         Emphasise changed words inside change hunks whose lines
+                    pair up one-to-one.
+`read_only`         Lock the buffer while the overlay is on.
+`auto_refresh`      Repaint (and refetch the baseline) on |BufWritePost|,
+                    |FileChangedShellPost| and |BufReadPost|.
+`live_refresh`      Repaint on |TextChanged| / |TextChangedI|, debounced by
+                    `debounce_ms`.
+`watch_git`         Watch the git directory and refetch the baseline when
+                    HEAD or the index change, so commits and checkouts made
+                    outside Neovim show up.
+`force_signcolumn`  Set 'signcolumn' to `yes:1` in the window while the
+                    overlay is on if it was `no`, restoring it on disable.
+`jump_on_enable`    Move to the first hunk when toggling on.
+`nav.wrap`          `]h` / `[h` wrap around.
+`nav.center`        Centre the cursor (`zz`) after a jump.
+`float.*`           Geometry, border, title, keys; `select_debounce_ms`
+                    delays rendering until the sidebar cursor settles;
+                    `fold_context` starts the pane folded; `context_lines`
+                    is the visible margin around each hunk when folded.
+
+`setup()` validates option types and raises on a mismatch.
+
+==============================================================================
+7. HIGHLIGHT GROUPS                                       *lazydiff-highlights*
+
+All groups are defined with `default = true`; user definitions win. They
+are derived from `DiffAdd`, `DiffDelete`, `Function` and `Normal` and
+re-applied on |ColorScheme|.
+
+  LazydiffAdd          bg of DiffAdd; bg-only so syntax colours survive
+  LazydiffDelete       fg + bg of DiffDelete (virtual lines)
+  LazydiffAddWord      changed span on an added line
+  LazydiffDeleteWord   changed span on a deleted virtual line
+  LazydiffAddSign      the `+` sign
+  LazydiffDeleteSign   the `- ` prefix
+  LazydiffHunkHeader   the `@@` line
+
+Float mode: LazydiffStatusModified, LazydiffStatusAdded,
+LazydiffStatusDeleted, LazydiffStatusRenamed, LazydiffStatusUntracked,
+LazydiffCountAdd, LazydiffCountDelete, LazydiffFloatPath, LazydiffFloatDim,
+LazydiffFloatTitle, LazydiffFloatSelected, LazydiffFold.
+
+==============================================================================
+8. HEALTH                                                     *lazydiff-health*
+
+`:checkhealth lazydiff` verifies the Neovim version, that `git` is on
+`$PATH`, and that the current configuration validates.
+
+vim:tw=78:ts=8:ft=help:norl:
