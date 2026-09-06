@@ -1,5 +1,8 @@
 local M = {}
 
+-- Untracked files above this size are listed but not line-counted.
+local MAX_COUNT_BYTES = 4 * 1024 * 1024
+
 local function run(cwd, args)
   -- vim.system raises ENOENT rather than returning an error code when cwd does
   -- not exist, which happens for a buffer whose directory was deleted out from
@@ -16,6 +19,10 @@ local function run(cwd, args)
   return result.code, result.stdout or "", result.stderr or ""
 end
 
+local function trim(s)
+  return (s:gsub("%s+$", ""))
+end
+
 -- Accepts a file path or a directory. Passing a directory used to strip it to
 -- its parent via dirname(), so repo_root("/path/to/repo") returned nil.
 function M.repo_root(path)
@@ -27,11 +34,51 @@ function M.repo_root(path)
   if code ~= 0 then
     return nil
   end
-  out = out:gsub("%s+$", "")
+  out = trim(out)
   if out == "" then
     return nil
   end
   return out
+end
+
+-- Absolute path of the repository's git directory. This is where HEAD and the
+-- index live, so it is what the baseline watcher observes. Worktrees keep a
+-- `.git` *file* at the root, which is why this asks git instead of guessing.
+function M.git_dir(repo_root)
+  local code, out = run(repo_root, { "rev-parse", "--absolute-git-dir" })
+  if code ~= 0 then
+    return nil
+  end
+  out = trim(out)
+  return out ~= "" and out or nil
+end
+
+-- Directory to resolve the repo from. The current buffer's name is only
+-- trusted when its parent directory actually exists: plugin buffers name
+-- themselves with things shaped like paths -- oil://, term://, fugitive:// --
+-- and dirname() on those yields a directory that isn't there.
+function M.anchor_dir()
+  local name = vim.api.nvim_buf_get_name(0)
+  if name ~= "" then
+    local dir = vim.fs.dirname(name)
+    if dir and vim.fn.isdirectory(dir) == 1 then
+      return dir
+    end
+  end
+  return vim.fn.getcwd()
+end
+
+-- Branch and tag names plus HEAD, for command completion.
+function M.refs(repo_root)
+  local list = { "HEAD" }
+  local code, out = run(repo_root, { "for-each-ref", "--format=%(refname:short)" })
+  if code ~= 0 then
+    return list
+  end
+  for _, ref in ipairs(vim.split(out, "\n", { plain = true, trimempty = true })) do
+    list[#list + 1] = ref
+  end
+  return list
 end
 
 function M.relpath(repo_root, abspath)
@@ -51,11 +98,17 @@ function M.is_tracked(repo_root, relpath, ref)
   return code == 0
 end
 
+-- Returns the blob content, or nil + a message + a reason. `reason` is
+-- "untracked" when the path simply doesn't exist at `ref`, so callers can
+-- treat that as "everything is new" rather than as an error.
 function M.head_blob(repo_root, relpath, ref)
   ref = ref or "HEAD"
   local code, out, err = run(repo_root, { "show", ref .. ":" .. relpath })
   if code ~= 0 then
-    return nil, err
+    if err:find("does not exist", 1, true) or err:find("exists on disk, but not in", 1, true) then
+      return nil, "file is not tracked at " .. ref, "untracked"
+    end
+    return nil, trim(err), "error"
   end
   return out, nil
 end
@@ -132,6 +185,39 @@ local function parse_numstat(out, files)
   end
 end
 
+-- Untracked files have no blob to diff against, so numstat never sees them.
+-- Read the file once: detect binaries by the same NUL rule git uses, and
+-- count lines ourselves so the sidebar isn't blank. Returns (lines, binary).
+local function inspect_untracked(abspath)
+  local stat = vim.uv.fs_stat(abspath)
+  if not stat or stat.type ~= "file" then
+    return 0, false
+  end
+  local f = io.open(abspath, "rb")
+  if not f then
+    return 0, false
+  end
+  local head = f:read(8000) or ""
+  if M.is_binary(head) then
+    f:close()
+    return 0, true
+  end
+  if stat.size > MAX_COUNT_BYTES then
+    f:close()
+    return 0, false
+  end
+  local content = head .. (f:read("*a") or "")
+  f:close()
+  if content == "" then
+    return 0, false
+  end
+  local _, newlines = content:gsub("\n", "")
+  if content:sub(-1) ~= "\n" then
+    newlines = newlines + 1
+  end
+  return newlines, false
+end
+
 -- Every file differing from `ref` in the working tree, plus untracked files.
 -- Returns an array sorted by path:
 --   { path, status, added, deleted, binary, untracked, old_path }
@@ -150,13 +236,13 @@ function M.changed_files(repo_root, ref)
     return entry
   end
 
-  local code, out, err = run(repo_root, { "diff", ref, "--name-status", "-z" })
+  local code, out, err = run(repo_root, { "diff", ref, "--name-status", "-z", "--" })
   if code ~= 0 then
-    return nil, err ~= "" and err or ("git diff failed against " .. ref)
+    return nil, err ~= "" and trim(err) or ("git diff failed against " .. ref)
   end
   parse_name_status(out, upsert)
 
-  local ncode, nout = run(repo_root, { "diff", ref, "--numstat", "-z" })
+  local ncode, nout = run(repo_root, { "diff", ref, "--numstat", "-z", "--" })
   if ncode == 0 then
     parse_numstat(nout, files)
   end
@@ -168,12 +254,7 @@ function M.changed_files(repo_root, ref)
         local entry = upsert(path)
         entry.status = "?"
         entry.untracked = true
-        -- Untracked files have no blob to diff against, so numstat never sees
-        -- them; count the lines ourselves so the sidebar isn't blank.
-        local ok, lines = pcall(vim.fn.readfile, repo_root .. "/" .. path)
-        if ok and type(lines) == "table" then
-          entry.added = #lines
-        end
+        entry.added, entry.binary = inspect_untracked(repo_root .. "/" .. path)
       end
     end
   end
