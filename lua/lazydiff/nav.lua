@@ -34,7 +34,7 @@ end
 
 -- True when the cursor row sits anywhere inside `hunk`'s new-side range.
 -- Used to skip the auto-jump when the user is already on the first hunk.
-function M.cursor_in_hunk(bufnr, hunk, cursor_row)
+function M.cursor_in_hunk(hunk, cursor_row)
   if hunk.new_count > 0 then
     local first = hunk.new_start
     local last = hunk.new_start + hunk.new_count - 1
@@ -44,6 +44,16 @@ function M.cursor_in_hunk(bufnr, hunk, cursor_row)
   -- repeated `]h` doesn't snap back to the same place.
   local target = M.target_line(hunk)
   return cursor_row == target or cursor_row == math.max(target - 1, 1)
+end
+
+-- Index and hunk containing `row`, or nil.
+function M.hunk_at(hunks, row)
+  for i, h in ipairs(hunks or {}) do
+    if M.cursor_in_hunk(h, row) then
+      return i, h
+    end
+  end
+  return nil
 end
 
 local function jump_to(bufnr, line)
