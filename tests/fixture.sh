@@ -51,6 +51,12 @@ head -c 2048 /dev/urandom >"$d/blob.bin"
 git -C "$d" add -A
 git -C "$d" commit -qm "fixture baseline"
 
+# A second commit, so HEAD~1 is a real, different ref for the ref-override
+# tests: second.lua exists at HEAD but not at HEAD~1.
+printf 'local M = {}\nfunction M.second() return 2 end\nreturn M\n' >"$d/second.lua"
+git -C "$d" add -A
+git -C "$d" commit -qm "fixture second"
+
 # Now dirty it, one case per file.
 # modified.lua: edit the top and the bottom so two hunks fall out.
 cat >"$d/modified.lua" <<'EOF'
@@ -76,6 +82,7 @@ git -C "$d" mv original.lua renamed.lua             # R  renamed
 printf '\n-- appended\n' >>"$d/has space.lua"       # M  path containing a space
 head -c 2048 /dev/urandom >"$d/blob.bin"            # M  binary
 printf 'local M = {}\nfunction M.new() return 42 end\nreturn M\n' >"$d/brand-new.lua"  # ?  untracked
+head -c 2048 /dev/urandom >"$d/new.bin"             # ?  untracked binary
 # unchanged.lua is deliberately left alone -- it must NOT appear in the list.
 
 # --- clean repo -------------------------------------------------------------
