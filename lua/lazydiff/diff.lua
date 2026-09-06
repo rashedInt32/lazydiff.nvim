@@ -12,15 +12,17 @@ local function normalize(old_lines, new_lines, old_start, old_count, new_start, 
   if old_count == 0 or new_count == 0 then
     return old_start, old_count, new_start, new_count
   end
-  while old_count > 0 and new_count > 0
-    and old_lines[old_start] == new_lines[new_start] do
+  while old_count > 0 and new_count > 0 and old_lines[old_start] == new_lines[new_start] do
     old_start = old_start + 1
     new_start = new_start + 1
     old_count = old_count - 1
     new_count = new_count - 1
   end
-  while old_count > 0 and new_count > 0
-    and old_lines[old_start + old_count - 1] == new_lines[new_start + new_count - 1] do
+  while
+    old_count > 0
+    and new_count > 0
+    and old_lines[old_start + old_count - 1] == new_lines[new_start + new_count - 1]
+  do
     old_count = old_count - 1
     new_count = new_count - 1
   end
@@ -76,6 +78,65 @@ function M.compute(old_lines, new_lines)
     end
   end
   return hunks
+end
+
+-- Split a line into tokens: runs of word characters (including any UTF-8
+-- byte), runs of whitespace, and single punctuation characters. Each token
+-- is a 1-based inclusive byte range.
+local WORD = "%w_\128-\255"
+local function tokenize(line)
+  local toks, i, n = {}, 1, #line
+  while i <= n do
+    local c = line:sub(i, i)
+    local class
+    if c:match("[" .. WORD .. "]") then
+      class = WORD
+    elseif c:match("%s") then
+      class = "%s"
+    end
+    local j = i
+    if class then
+      local stop = line:find("[^" .. class .. "]", i)
+      j = stop and stop - 1 or n
+    end
+    toks[#toks + 1] = { i, j }
+    i = j + 1
+  end
+  return toks
+end
+
+local function token_text(line, toks)
+  local parts = {}
+  for i, t in ipairs(toks) do
+    parts[i] = line:sub(t[1], t[2])
+  end
+  return table.concat(parts, "\n")
+end
+
+-- Word-level diff of one old line against one new line. Returns two arrays
+-- of { start_col, end_col } byte ranges (0-based start, exclusive end): the
+-- removed spans in the old line and the inserted spans in the new line.
+function M.word_diff(old_line, new_line)
+  if old_line == new_line then
+    return {}, {}
+  end
+  local ot, nt = tokenize(old_line), tokenize(new_line)
+  local raw = vim.diff(token_text(old_line, ot), token_text(new_line, nt), {
+    result_type = "indices",
+    algorithm = "histogram",
+    ctxlen = 0,
+  })
+  local old_ranges, new_ranges = {}, {}
+  for _, h in ipairs(raw or {}) do
+    local sa, ca, sb, cb = h[1], h[2], h[3], h[4]
+    if ca > 0 and ot[sa] and ot[sa + ca - 1] then
+      old_ranges[#old_ranges + 1] = { ot[sa][1] - 1, ot[sa + ca - 1][2] }
+    end
+    if cb > 0 and nt[sb] and nt[sb + cb - 1] then
+      new_ranges[#new_ranges + 1] = { nt[sb][1] - 1, nt[sb + cb - 1][2] }
+    end
+  end
+  return old_ranges, new_ranges
 end
 
 function M.format_hunk_header(hunk)
