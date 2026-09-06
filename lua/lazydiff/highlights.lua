@@ -40,15 +40,26 @@ local function first_bg(names)
   return nil
 end
 
+-- Mix `color` toward `target` by `amount` (0..1). Used to derive the word
+-- emphasis bands from the line bands, so they read as "more of the same".
+local function blend(color, target, amount)
+  local function channel(shift)
+    local a = bit.band(bit.rshift(color, shift), 0xff)
+    local b = bit.band(bit.rshift(target, shift), 0xff)
+    return math.floor(a + (b - a) * amount + 0.5)
+  end
+  return bit.bor(bit.lshift(channel(16), 16), bit.lshift(channel(8), 8), channel(0))
+end
+
 local function apply()
   local da = source_hl("DiffAdd")
   local dd = source_hl("DiffDelete")
-  local dc = source_hl("DiffChange")
   local fn = source_hl("Function")
   local nm = source_hl("Normal")
+  local toward = nm.fg or 0xffffff
 
-  -- LazydiffAdd / Change paint the in-buffer added line via hl_group + hl_eol;
-  -- they're bg-only so they don't fight treesitter syntax fg.
+  -- LazydiffAdd paints the in-buffer added line via hl_group + hl_eol; it is
+  -- bg-only so it doesn't fight treesitter syntax fg.
   -- LazydiffDelete paints virtual deleted lines (no syntax to preserve), so it
   -- carries fg + bg.
   --
@@ -57,13 +68,29 @@ local function apply()
   -- surrounding line band is painted. Without this, some Neovim builds /
   -- colorschemes paint the line bg over the virt_text region too, swallowing
   -- the marker.
+  --
+  -- The *Word groups mark the changed spans inside a change hunk. They are a
+  -- stronger shade of the line band when one exists, otherwise bold+underline
+  -- so they still stand out on fg-only schemes.
   local groups = {
     LazydiffAdd = { bg = da.bg, default = true },
-    LazydiffChange = { bg = dc.bg, default = true },
     LazydiffDelete = { fg = dd.fg or fallbacks.delete, bg = dd.bg, default = true },
     LazydiffAddSign = { fg = da.fg or fallbacks.add, bg = nm.bg, bold = true, default = true },
     LazydiffDeleteSign = { fg = dd.fg or fallbacks.delete, bg = nm.bg, bold = true, default = true },
     LazydiffHunkHeader = { fg = fn.fg or fallbacks.header, default = true },
+    LazydiffAddWord = {
+      bg = da.bg and blend(da.bg, toward, 0.2) or nil,
+      bold = true,
+      underline = da.bg == nil,
+      default = true,
+    },
+    LazydiffDeleteWord = {
+      fg = dd.fg or fallbacks.delete,
+      bg = dd.bg and blend(dd.bg, toward, 0.2) or nil,
+      bold = true,
+      underline = dd.bg == nil,
+      default = true,
+    },
   }
 
   -- Float mode. Status letters and counts are fg-only text in the sidebar, so
@@ -88,13 +115,22 @@ local function apply()
     bold = true,
     default = true,
   }
+  groups.LazydiffFold = { fg = dim_fg, default = true }
 
   for name, spec in pairs(groups) do
     vim.api.nvim_set_hl(0, name, spec)
   end
 end
 
+local installed = false
+
+-- Idempotent: setup() is called from init.setup() and again lazily on the
+-- first enable(), whichever comes first.
 function M.setup()
+  if installed then
+    return
+  end
+  installed = true
   apply()
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = vim.api.nvim_create_augroup("LazydiffHighlights", { clear = true }),
