@@ -130,6 +130,22 @@ local function file_lines(abspath)
   return {}
 end
 
+-- Baselines are cached per path for the life of the float; R clears them.
+local function baseline_for(entry)
+  local key = entry.old_path or entry.path
+  local cached = S.baselines[key]
+  if cached then
+    return cached
+  end
+  local lines = {}
+  if not entry.untracked then
+    local blob = git.head_blob(S.repo, key, S.ref)
+    lines = blob and git.split_lines(blob) or {}
+  end
+  S.baselines[key] = lines
+  return lines
+end
+
 -- SEAM: the only place that decides which buffer the review pane displays.
 -- v1 returns a throwaway scratch buffer, which is what makes the pane
 -- read-only. To make it editable later, return the real file's bufnr here --
@@ -147,6 +163,66 @@ local function pane_buf(abspath, lines)
     vim.bo[buf].filetype = ft
   end
   return buf
+end
+
+-- ------------------------------------------------------------------ folds --
+
+-- 1-based inclusive line ranges of at least two lines that no hunk (plus
+-- `context` lines either side) touches.
+function M.unchanged_regions(hunks, total, context)
+  local keep = {}
+  for _, h in ipairs(hunks) do
+    local s, e
+    if h.new_count > 0 then
+      s, e = h.new_start, h.new_start + h.new_count - 1
+    else
+      -- A pure delete sits between new_start and new_start + 1; keep both.
+      s, e = math.max(h.new_start, 1), h.new_start + 1
+    end
+    keep[#keep + 1] = { math.max(s - context, 1), math.min(e + context, total) }
+  end
+  table.sort(keep, function(a, b)
+    return a[1] < b[1]
+  end)
+
+  local folds, pos = {}, 1
+  for _, k in ipairs(keep) do
+    if k[1] - pos >= 2 then
+      folds[#folds + 1] = { pos, k[1] - 1 }
+    end
+    pos = math.max(pos, k[2] + 1)
+  end
+  if total - pos >= 1 then
+    folds[#folds + 1] = { pos, total }
+  end
+  return folds
+end
+
+function M.foldtext()
+  local n = vim.v.foldend - vim.v.foldstart + 1
+  return ("··· %d unchanged line%s ···"):format(n, n == 1 and "" or "s")
+end
+
+local function apply_folds(win, buf, hunks)
+  if not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  vim.wo[win].foldmethod = "manual"
+  vim.wo[win].foldtext = "v:lua.require'lazydiff.float'.foldtext()"
+  vim.wo[win].fillchars = "fold: "
+  vim.wo[win].foldenable = S.folded
+  if not S.folded then
+    return
+  end
+  local total = vim.api.nvim_buf_line_count(buf)
+  local folds = M.unchanged_regions(hunks, total, config.options.float.context_lines or 3)
+  vim.api.nvim_win_call(win, function()
+    vim.cmd("silent! normal! zE")
+    for _, f in ipairs(folds) do
+      vim.cmd(("silent! %d,%dfold"):format(f[1], f[2]))
+    end
+    vim.cmd("silent! normal! zM")
+  end)
 end
 
 -- ---------------------------------------------------------------- sidebar --
@@ -185,13 +261,14 @@ local function build_row(entry, width)
   local line = prefix .. path .. string.rep(" ", gap) .. counts
 
   local counts_start = #line - #counts
-  return line, {
-    status = { 1, 2 },
-    path = { #prefix, #prefix + #path },
-    binary = entry.binary and { counts_start, #line } or nil,
-    adds = (not entry.binary) and { counts_start, counts_start + #adds } or nil,
-    dels = (not entry.binary) and { counts_start + #adds + 1, #line } or nil,
-  }
+  return line,
+    {
+      status = { 1, 2 },
+      path = { #prefix, #prefix + #path },
+      binary = entry.binary and { counts_start, #line } or nil,
+      adds = (not entry.binary) and { counts_start, counts_start + #adds } or nil,
+      dels = (not entry.binary) and { counts_start + #adds + 1, #line } or nil,
+    }
 end
 
 local function render_list()
@@ -229,7 +306,14 @@ end
 
 local function list_title()
   local n = #S.files
-  return string.format("%s· %d file%s ", config.options.float.title, n, n == 1 and "" or "s")
+  local ref = S.ref ~= config.defaults.ref and (" vs " .. S.ref) or ""
+  return string.format(
+    "%s· %d file%s%s ",
+    config.options.float.title,
+    n,
+    n == 1 and "" or "s",
+    ref
+  )
 end
 
 -- ---------------------------------------------------------------- keymaps --
@@ -261,6 +345,7 @@ local function open_file()
     return
   end
   local abspath = S.repo .. "/" .. entry.path
+  local ref = S.ref
   local line = 1
   if S.pane_win and vim.api.nvim_win_is_valid(S.pane_win) then
     line = vim.api.nvim_win_get_cursor(S.pane_win)[1]
@@ -277,7 +362,7 @@ local function open_file()
     math.min(line, vim.api.nvim_buf_line_count(0)),
     0,
   })
-  require("lazydiff").enable()
+  require("lazydiff.state").enable(0, ref)
 end
 
 local function focus_win(win)
@@ -286,9 +371,41 @@ local function focus_win(win)
   end
 end
 
-local function setup_pane_keys(buf)
+local select_file
+
+local function step_file(delta)
+  if not S or #S.files == 0 then
+    return
+  end
+  local index = S.index + delta
+  if index < 1 then
+    index = #S.files
+  elseif index > #S.files then
+    index = 1
+  end
+  select_file(index)
+  pcall(vim.api.nvim_win_set_cursor, S.list_win, { index, 0 })
+end
+
+function M.next_file()
+  step_file(1)
+end
+
+function M.prev_file()
+  step_file(-1)
+end
+
+function M.toggle_fold()
+  if not S then
+    return
+  end
+  S.folded = not S.folded
+  local hunks = require("lazydiff.state").get_hunks(S.pane_buf) or {}
+  apply_folds(S.pane_win, S.pane_buf, hunks)
+end
+
+local function setup_shared_keys(buf)
   local keys = config.options.float.keys
-  local nav = require("lazydiff.nav")
   map(buf, keys.close, function()
     M.close()
   end, "close float")
@@ -296,6 +413,15 @@ local function setup_pane_keys(buf)
     M.refresh()
   end, "refresh")
   map(buf, keys.open_file, open_file, "open file")
+  map(buf, keys.next_file, M.next_file, "next file")
+  map(buf, keys.prev_file, M.prev_file, "previous file")
+  map(buf, keys.toggle_fold, M.toggle_fold, "toggle folding of unchanged lines")
+end
+
+local function setup_pane_keys(buf)
+  local keys = config.options.float.keys
+  local nav = require("lazydiff.nav")
+  setup_shared_keys(buf)
   map(buf, keys.next_hunk, function()
     nav.goto_next(buf)
   end, "next hunk")
@@ -309,13 +435,7 @@ end
 
 local function setup_list_keys(buf)
   local keys = config.options.float.keys
-  map(buf, keys.close, function()
-    M.close()
-  end, "close float")
-  map(buf, keys.refresh, function()
-    M.refresh()
-  end, "refresh")
-  map(buf, keys.open_file, open_file, "open file")
+  setup_shared_keys(buf)
   map(buf, keys.focus_pane, function()
     focus_win(S and S.pane_win)
   end, "focus review pane")
@@ -323,7 +443,7 @@ end
 
 -- -------------------------------------------------------------- selection --
 
-local function select_file(index)
+select_file = function(index)
   if not S or #S.files == 0 then
     return
   end
@@ -345,13 +465,7 @@ local function select_file(index)
     baseline, hunks = {}, {}
   else
     lines = file_lines(abspath)
-    if entry.untracked then
-      -- No blob exists at `ref`, so the whole file is an addition.
-      baseline = {}
-    else
-      local blob = git.head_blob(S.repo, entry.old_path or entry.path, S.ref)
-      baseline = blob and git.split_lines(blob) or {}
-    end
+    baseline = baseline_for(entry)
     hunks = diff.compute(baseline, lines)
   end
 
@@ -368,18 +482,49 @@ local function select_file(index)
   render.render(buf, hunks)
   state.attach(buf, { hunks = hunks, baseline = baseline, ref = S.ref })
   setup_pane_keys(buf)
+  apply_folds(S.pane_win, buf, hunks)
 
-  pcall(
-    vim.api.nvim_win_set_config,
-    S.pane_win,
-    win_opts(S.geo.pane, " " .. entry.path .. " ")
-  )
+  pcall(vim.api.nvim_win_set_config, S.pane_win, win_opts(S.geo.pane, " " .. entry.path .. " "))
 
   if #hunks > 0 then
     local target = require("lazydiff.nav").target_line(hunks[1])
     local total = vim.api.nvim_buf_line_count(buf)
     pcall(vim.api.nvim_win_set_cursor, S.pane_win, { math.max(math.min(target, total), 1), 0 })
   end
+end
+
+local function stop_select_timer()
+  if S and S.select_timer then
+    pcall(S.select_timer.stop, S.select_timer)
+    pcall(S.select_timer.close, S.select_timer)
+    S.select_timer = nil
+  end
+end
+
+-- Holding j/k fires CursorMoved per row; rendering each one means a git call
+-- and a full repaint per keystroke. Wait for the cursor to settle instead.
+local function select_row_debounced(row)
+  local ms = config.options.float.select_debounce_ms or 0
+  if ms <= 0 then
+    select_file(row)
+    return
+  end
+  stop_select_timer()
+  S.select_timer = vim.uv.new_timer()
+  S.select_timer:start(
+    ms,
+    0,
+    vim.schedule_wrap(function()
+      stop_select_timer()
+      if not S or not vim.api.nvim_win_is_valid(S.list_win) then
+        return
+      end
+      local current = vim.api.nvim_win_get_cursor(S.list_win)[1]
+      if current ~= S.index then
+        select_file(current)
+      end
+    end)
+  )
 end
 
 -- ------------------------------------------------------------- public API --
@@ -393,6 +538,7 @@ function M.close()
     return
   end
   S.closing = true
+  stop_select_timer()
   local s = S
   S = nil
 
@@ -451,6 +597,7 @@ function M.refresh()
   end
 
   S.files = files
+  S.baselines = {}
   render_list()
   pcall(vim.api.nvim_win_set_config, S.list_win, win_opts(S.geo.list, list_title()))
 
@@ -477,7 +624,7 @@ local function setup_autocmds()
       end
       local row = vim.api.nvim_win_get_cursor(S.list_win)[1]
       if row ~= S.index then
-        select_file(row)
+        select_row_debounced(row)
       end
     end,
   })
@@ -504,35 +651,27 @@ local function setup_autocmds()
   })
 end
 
--- Directory to resolve the repo from. The current buffer's name is only
--- trusted when its parent directory actually exists: plugin buffers name
--- themselves with things shaped like paths -- oil://, term://, fugitive:// --
--- and dirname() on those yields a directory that isn't there, which would
--- report "not in a git repository" from a terminal or file-explorer buffer.
-local function anchor_dir()
-  local name = vim.api.nvim_buf_get_name(0)
-  if name ~= "" then
-    local dir = vim.fs.dirname(name)
-    if dir and vim.fn.isdirectory(dir) == 1 then
-      return dir
-    end
-  end
-  return vim.fn.getcwd()
-end
+-- opts.ref overrides config.options.ref for this float. Opening while already
+-- open focuses the list, unless a different ref is asked for, in which case
+-- the float is rebuilt against it.
+function M.open(opts)
+  opts = opts or {}
+  local ref = opts.ref or config.options.ref
 
-function M.open()
   if S then
-    focus_win(S.list_win)
-    return
+    if ref == S.ref then
+      focus_win(S.list_win)
+      return
+    end
+    M.close()
   end
 
-  local repo = git.repo_root(anchor_dir())
+  local repo = git.repo_root(git.anchor_dir())
   if not repo then
     notify("not in a git repository", vim.log.levels.WARN)
     return
   end
 
-  local ref = config.options.ref
   local files, err = git.changed_files(repo, ref)
   if not files then
     notify(err or "failed to list changes", vim.log.levels.ERROR)
@@ -547,7 +686,9 @@ function M.open()
     repo = repo,
     ref = ref,
     files = files,
+    baselines = {},
     index = 0,
+    folded = config.options.float.fold_context == true,
     prev_win = vim.api.nvim_get_current_win(),
     geo = geometry(),
   }
@@ -559,12 +700,12 @@ function M.open()
   S.list_win = vim.api.nvim_open_win(S.list_buf, false, win_opts(S.geo.list, list_title()))
   vim.wo[S.list_win].cursorline = true
   vim.wo[S.list_win].wrap = false
-  vim.wo[S.list_win].winhighlight =
-    "CursorLine:LazydiffFloatSelected,FloatTitle:LazydiffFloatTitle"
+  vim.wo[S.list_win].winhighlight = "CursorLine:LazydiffFloatSelected,FloatTitle:LazydiffFloatTitle"
 
   local placeholder = vim.api.nvim_create_buf(false, true)
   vim.bo[placeholder].bufhidden = "wipe"
   S.pane_win = vim.api.nvim_open_win(placeholder, false, win_opts(S.geo.pane, ""))
+  vim.wo[S.pane_win].winhighlight = "Folded:LazydiffFold"
 
   S.augroup = vim.api.nvim_create_augroup("LazydiffFloat", { clear = true })
   setup_autocmds()
@@ -576,11 +717,12 @@ function M.open()
   select_file(1)
 end
 
-function M.toggle()
-  if S then
+function M.toggle(opts)
+  opts = opts or {}
+  if S and (opts.ref == nil or opts.ref == S.ref) then
     M.close()
   else
-    M.open()
+    M.open(opts)
   end
 end
 
